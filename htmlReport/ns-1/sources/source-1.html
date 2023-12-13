@@ -1,0 +1,353 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=windows-1251"> 
+  <title>Coverage Report > CacheStateAndTimeout</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">ru.vtb.javaCourse.Task3</a>
+</div>
+
+<h1>Coverage Summary for Class: CacheStateAndTimeout (ru.vtb.javaCourse.Task3)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CacheStateAndTimeout</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (10/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87%
+  </span>
+  <span class="absValue">
+    (67/77)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">CacheStateAndTimeout$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">CacheStateAndTimeout$TimeoutResult</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (7/7)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (15/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    88,4%
+  </span>
+  <span class="absValue">
+    (76/86)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;package ru.vtb.javaCourse.Task3;
+&nbsp;
+&nbsp;import ru.vtb.javaCourse.Task3.Annotation.Cache;
+&nbsp;import ru.vtb.javaCourse.Task3.Annotation.Mutator;
+&nbsp;import ru.vtb.javaCourse.Task3.Annotation.ReturnFromCacheFlag;
+&nbsp;
+&nbsp;import java.lang.reflect.Field;
+&nbsp;import java.lang.reflect.Method;
+&nbsp;import java.util.*;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;/*Стратегия кэширования:
+&nbsp;Для получения значения, идентифицирующего текущее состояние объекта, используется перебор всех полей
+&nbsp;через Reflection. Операция достаточно длительная, но такой подход позволяет сделать кэширование для
+&nbsp;любого класса без дополнительных требований к нему. Для минимизации временных затрат состояние объекта
+&nbsp;рассчитывается только при смене состояния, что исключает задержки при поиске в кэше, но незначительно
+&nbsp;увеличивает время создания кэша для нового состояния.
+&nbsp;
+&nbsp;В cacheHolder хранятся кэши для разных состояний, кеш для текущего состояния доступен через поле cache.
+&nbsp;При изменении состояния ищем уже существующий кэш в cacheHolder (синхронизация по cacheHolder).
+&nbsp;Если нашли, то записываем его в поле cache. Если не нашли, то создаем новый и записываем его в cacheHolder.
+&nbsp;При работе с кэшем для текущего состояния cache синхронизируемся по полю cache.
+&nbsp;
+&nbsp;Удаление записей с истекшим сроком действия производится по всему casheHolder (синхронизация по ссылке на cache).
+&nbsp;Удаление записей в cacheHolder у которых нет записей в кэше производится с синхронизацией по cacheHolder.
+&nbsp;
+&nbsp;Такой подход позволяет минимизировать возможные замедления при работе с текущим кэшем и при добавлении в
+&nbsp;casheHolder кэша для нового состояния.
+&nbsp; */
+&nbsp;
+&nbsp;public class CacheStateAndTimeout &lt;T&gt; implements StateMethodsCacheable {
+&nbsp;    T obj;
+&nbsp;    //Ссылка на поле, которое содержит признак возврата из кэша
+&nbsp;    private final Field fromCacheField;
+&nbsp;
+&nbsp;
+&nbsp;
+&nbsp;    //Кэш для текущего состояния
+&nbsp;    private volatile Map&lt;Object, TimeoutResult&gt; cache;
+&nbsp;    //Хранилище кэшей для состояний
+<b class="fc">&nbsp;    private volatile Map&lt;String, Object&gt; cachesHolder = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;    private int clearPeriod = 500;</b>
+&nbsp;    //Таймер
+<b class="fc">&nbsp;    Timer timer = new Timer(&quot;cleaner&quot;, true);</b>
+&nbsp;
+&nbsp;    //Метод для установки поля с аннотацией @ReturnFromCacheFlag
+&nbsp;    private void setFromCacheField(Boolean value) {
+<b class="fc">&nbsp;        if (fromCacheField != null) {</b>
+&nbsp;            try {
+<b class="fc">&nbsp;                fromCacheField.set(obj, value);</b>
+<b class="nc">&nbsp;            } catch (IllegalAccessException e) {</b>
+<b class="nc">&nbsp;                System.out.println(&quot;Не удалось установить признак возврата кэшированного значения&quot;);</b>
+<b class="fc">&nbsp;            }</b>
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    //Конструктор
+<b class="fc">&nbsp;    public CacheStateAndTimeout(T cachedObject) {</b>
+&nbsp;        //Сохраняем исходный объект
+<b class="fc">&nbsp;        this.obj = cachedObject;</b>
+&nbsp;        //Проверяем наличие поле с признаком возврата результата из кэша
+<b class="fc">&nbsp;        fromCacheField = Arrays.stream(obj.getClass().getDeclaredFields())</b>
+<b class="fc">&nbsp;                .filter(f -&gt; f.isAnnotationPresent(ReturnFromCacheFlag.class)</b>
+<b class="fc">&nbsp;                        &amp;&amp; f.getType() == Boolean.class)</b>
+<b class="fc">&nbsp;                .findFirst()</b>
+<b class="fc">&nbsp;                .orElse(null);</b>
+&nbsp;        //Инициализируем кэш
+<b class="fc">&nbsp;        cache = new HashMap&lt;&gt;();</b>
+&nbsp;        //и помещяем его в хранилище
+<b class="fc">&nbsp;        cachesHolder.put(getState(), cache);</b>
+&nbsp;        //Запускаем таймер очистки кэша
+<b class="fc">&nbsp;        timer.schedule(</b>
+<b class="fc">&nbsp;                new TimerTask() {</b>
+&nbsp;                    @Override
+&nbsp;                    public void run() {
+<b class="fc">&nbsp;                        actualizeCache();</b>
+&nbsp;                    }
+&nbsp;                }, 500, 500);
+&nbsp;    }
+&nbsp;
+&nbsp;    //Вложенный класс для хранения результатов выполнения метода и времени жизни кеша
+&nbsp;    private static class TimeoutResult {
+&nbsp;        Object result;
+&nbsp;        Long timeout;
+&nbsp;        int duration;
+&nbsp;
+<b class="fc">&nbsp;        public TimeoutResult(Object result, int duration) {</b>
+<b class="fc">&nbsp;            this.result = result;</b>
+<b class="fc">&nbsp;            this.duration = duration;</b>
+<b class="fc">&nbsp;            resetTimeout();</b>
+&nbsp;        }
+&nbsp;
+&nbsp;        public boolean isALife() {
+<b class="fc">&nbsp;            return (timeout == null || timeout &gt;= System.currentTimeMillis());</b>
+&nbsp;        }
+&nbsp;
+&nbsp;        public void resetTimeout() {
+<b class="fc">&nbsp;            if (duration &gt; 0) {</b>
+<b class="fc">&nbsp;                this.timeout = System.currentTimeMillis() + duration;</b>
+&nbsp;            }
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    //Вычисление состояния объекта
+&nbsp;    private String getState() {
+<b class="fc">&nbsp;        String result = &quot;&quot;;</b>
+<b class="fc">&nbsp;        Class currentClass = obj.getClass();</b>
+<b class="fc">&nbsp;        while (currentClass != Object.class) {</b>
+<b class="fc">&nbsp;            result += &quot;[&quot; + Arrays.stream(currentClass.getDeclaredFields())</b>
+<b class="fc">&nbsp;                    .sorted(Comparator.comparing(Field::getName))</b>
+<b class="fc">&nbsp;                    .map(p -&gt; {</b>
+&nbsp;                        try {
+<b class="fc">&nbsp;                            p.setAccessible(true);</b>
+<b class="fc">&nbsp;                            return p.get(obj) == null ? &quot;&quot; : p.get(obj).toString();</b>
+<b class="nc">&nbsp;                        } catch (IllegalAccessException e) {</b>
+<b class="nc">&nbsp;                            System.out.println(e.getMessage());</b>
+<b class="nc">&nbsp;                            return &quot;&quot;;</b>
+&nbsp;                        }
+&nbsp;                    })
+<b class="fc">&nbsp;                    .collect(Collectors.joining(&quot;:&quot;)) + &quot;]&quot;;</b>
+<b class="fc">&nbsp;            currentClass = currentClass.getSuperclass();</b>
+&nbsp;        }
+<b class="fc">&nbsp;        return result;</b>
+&nbsp;    }
+&nbsp;
+&nbsp;    //Выполнение метода (обработка исключений)
+&nbsp;    private Object methodInvoke(Object obj, Method method, Object[] args) {
+&nbsp;        try {
+<b class="fc">&nbsp;            return method.invoke(obj, args);</b>
+<b class="nc">&nbsp;        } catch (Exception ex) {</b>
+<b class="nc">&nbsp;            throw new RuntimeException(ex);</b>
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    //Функция, обрабатывающая вызов методов объекта, реализация кэширование
+&nbsp;    @Override
+&nbsp;    public Object getResult(Method method, Object[] args) {
+&nbsp;        Method m;
+<b class="fc">&nbsp;        setFromCacheField(null);</b>
+&nbsp;        try {
+<b class="fc">&nbsp;            m = obj.getClass().getMethod(method.getName(), method.getParameterTypes());</b>
+<b class="nc">&nbsp;        } catch (NoSuchMethodException e) {</b>
+<b class="nc">&nbsp;            return methodInvoke(obj, method, args);</b>
+<b class="fc">&nbsp;        }</b>
+<b class="fc">&nbsp;        if (m.getAnnotation(Mutator.class) != null) {</b>
+<b class="fc">&nbsp;            methodInvoke(obj, method, args);</b>
+<b class="fc">&nbsp;            changeState();</b>
+&nbsp;        }
+<b class="fc">&nbsp;        if (m.getAnnotation(Cache.class) != null) {</b>
+<b class="fc">&nbsp;            synchronized (cache) {</b>
+<b class="fc">&nbsp;                if (cache.containsKey(method) &amp;&amp; cache.get(method).isALife()) {</b>
+<b class="fc">&nbsp;                    setFromCacheField(true);</b>
+<b class="fc">&nbsp;                    TimeoutResult res = (TimeoutResult) cache.get(method);</b>
+<b class="fc">&nbsp;                    res.resetTimeout();</b>
+<b class="fc">&nbsp;                    return res.result;</b>
+&nbsp;                } else {
+<b class="fc">&nbsp;                    Object res = methodInvoke(obj, method, args);</b>
+<b class="fc">&nbsp;                    int tm = m.getAnnotation(Cache.class).value();</b>
+<b class="fc">&nbsp;                    cache.put(method, new TimeoutResult(res, tm));</b>
+<b class="fc">&nbsp;                    setFromCacheField(false);</b>
+<b class="fc">&nbsp;                    return res;</b>
+&nbsp;                }
+<b class="nc">&nbsp;            }</b>
+&nbsp;        }
+<b class="fc">&nbsp;        return methodInvoke(obj, method, args);</b>
+&nbsp;    }
+&nbsp;
+&nbsp;    //Смена кэша при изменении состояния объекта
+&nbsp;    private void changeState() {
+<b class="fc">&nbsp;        String currentState = getState();</b>
+<b class="fc">&nbsp;        synchronized (cachesHolder) {</b>
+&nbsp;            //Сохраняем текущий кэш в хранилище
+<b class="fc">&nbsp;            if (cachesHolder.containsKey(currentState)) {</b>
+<b class="fc">&nbsp;                cache = (Map&lt;Object, TimeoutResult&gt;) cachesHolder.get(currentState);</b>
+&nbsp;            } else {
+<b class="fc">&nbsp;                cache = new HashMap&lt;&gt;();</b>
+<b class="fc">&nbsp;                cachesHolder.put(currentState, cache);</b>
+&nbsp;            }
+<b class="fc">&nbsp;        }</b>
+&nbsp;    }
+&nbsp;
+&nbsp;    //Очистка кэша
+&nbsp;    private void actualizeCache() {
+&nbsp;        HashSet&lt;Object&gt; vals;
+<b class="fc">&nbsp;        synchronized (cachesHolder) {</b>
+<b class="fc">&nbsp;            vals = new HashSet&lt;&gt;(cachesHolder.values());</b>
+<b class="fc">&nbsp;        }</b>
+<b class="fc">&nbsp;        for (Object val : vals) {</b>
+<b class="fc">&nbsp;            synchronized (val) {</b>
+<b class="fc">&nbsp;                HashMap cache = (HashMap) val;</b>
+<b class="fc">&nbsp;                cache.values().removeIf(p -&gt; !((TimeoutResult) p).isALife());</b>
+<b class="fc">&nbsp;            }</b>
+<b class="fc">&nbsp;        }</b>
+&nbsp;
+<b class="fc">&nbsp;        synchronized (cachesHolder) {</b>
+<b class="fc">&nbsp;            cachesHolder.values().removeIf(p -&gt; ((Map) p).isEmpty());</b>
+<b class="fc">&nbsp;        }</b>
+&nbsp;    }
+&nbsp;
+&nbsp;    public Map&lt;String, Object&gt; getCachesHolder() {
+<b class="fc">&nbsp;        return new HashMap&lt;&gt;(cachesHolder);</b>
+&nbsp;    }
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2023-12-12 18:02</div>
+</div>
+</body>
+</html>
